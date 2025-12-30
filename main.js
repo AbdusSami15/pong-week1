@@ -357,8 +357,9 @@
       this.btnStart = document.getElementById("btnStart");
       this.btnQuit = document.getElementById("btnQuit");
 
-      this.btnStart.addEventListener("click", () => {
+      this.btnStart.addEventListener("click", async () => {
         this._armAudio();
+        await this._enterFullscreenLandscape();
         this._startOrRestart();
       });
       this.btnQuit?.addEventListener("click", () => this._quitToMenu());
@@ -380,6 +381,22 @@
 
       this._fitToScreen();
       window.addEventListener("resize", () => this._fitToScreen());
+    }
+
+    async _enterFullscreenLandscape() {
+      try {
+        const root = document.documentElement;
+        if (!document.fullscreenElement && root.requestFullscreen) {
+          try {
+            await root.requestFullscreen();
+          } catch {}
+        }
+        if (screen.orientation && screen.orientation.lock) {
+          try {
+            await screen.orientation.lock("landscape");
+          } catch {}
+        }
+      } catch {}
     }
 
     _armAudio() {
