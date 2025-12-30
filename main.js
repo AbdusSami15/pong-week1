@@ -27,6 +27,11 @@
       alphaStart: 0.45,    // leading opacity
       alphaEnd: 0.0,       // oldest opacity
       color: "#e9f1ff"     // base color (tinted by alpha)
+      , colorful: true,     // enable rainbow trail when true
+      hueSpeedDegPerSec: 120, // hue rotation speed based on time
+      hueSweepAlongTrail: 320, // hue range from oldest->newest
+      saturationPct: 85,    // HSL saturation for rainbow
+      lightnessPct: 65      // HSL lightness for rainbow
     },
     serve: {
       countdownSeconds: 3,
@@ -804,7 +809,11 @@
       const a0 = CONFIG.trail.alphaStart;
       const a1 = CONFIG.trail.alphaEnd;
       const base = (this.trail.head - total + this.trail.size) % this.trail.size;
-      ctx.fillStyle = CONFIG.trail.color;
+      const colorful = !!CONFIG.trail.colorful;
+      const hueSpeed = CONFIG.trail.hueSpeedDegPerSec || 0;
+      const hueSweep = CONFIG.trail.hueSweepAlongTrail || 0;
+      const sat = CONFIG.trail.saturationPct ?? 85;
+      const light = CONFIG.trail.lightnessPct ?? 65;
       let lastAlpha = -1;
       for (let k = 0; k < total; k++) {
         const idx = (base + k) % this.trail.size;
@@ -815,6 +824,12 @@
         if (alpha !== lastAlpha) {
           ctx.globalAlpha = alpha;
           lastAlpha = alpha;
+        }
+        if (colorful) {
+          const hue = ((this.time * hueSpeed) + (t * hueSweep)) % 360;
+          ctx.fillStyle = `hsl(${hue}deg, ${sat}%, ${light}%)`;
+        } else {
+          ctx.fillStyle = CONFIG.trail.color;
         }
         ctx.beginPath();
         ctx.arc(x, y, CONFIG.ball.r, 0, TAU);
