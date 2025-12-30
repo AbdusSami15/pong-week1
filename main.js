@@ -381,6 +381,9 @@
 
       this._fitToScreen();
       window.addEventListener("resize", () => this._fitToScreen());
+      window.addEventListener("orientationchange", () => this._fitToScreen());
+      document.addEventListener("fullscreenchange", () => this._fitToScreen());
+      window.visualViewport?.addEventListener("resize", () => this._fitToScreen());
     }
 
     async _enterFullscreenLandscape() {

@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Pong - Week 1</title>
   <style>
     html, body {
@@ -13,15 +16,20 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       overflow: hidden;
       touch-action: none;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
     }
     canvas { display: block; width: 100vw; height: 100vh; }
+    @supports (height: 100dvh) {
+      canvas { height: 100dvh; }
+    }
     #ui {
       position: fixed; inset: 0;
       pointer-events: none;
     }
     /* THEME HUD */
     #hud {
-      position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%);
       width: min(1120px, calc(100vw - 16px));
       height: 56px;
       border-radius: 18px;
@@ -81,7 +89,7 @@
     }
     #fxFlash.show { opacity: 1; }
     /* 2P toggle */
-    #toggle2p { position: absolute; right: 18px; top: 72px; pointer-events: auto; }
+    #toggle2p { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 18px); top: calc(env(safe-area-inset-top, 0px) + 72px); pointer-events: auto; }
     #toggle2p label {
       display: inline-flex; align-items: center; gap: 8px;
       background: rgba(0,0,0,0.35); color: #f3f7ff;
@@ -106,6 +114,7 @@
       display: grid; place-items: center;
       background: rgba(0,0,0,0.55);
       pointer-events: auto;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     }
     .hidden { display: none !important; }
     .panel {
@@ -134,6 +143,15 @@
     .btn-primary { background: linear-gradient(180deg, #6ee7b7, #34d399); }
     .btn-danger { background: linear-gradient(180deg, #fb7185, #ef4444); }
     .btn:hover { filter: brightness(1.05); }
+
+    /* Compact tweaks for smaller phones */
+    @media (max-width: 480px) {
+      #hud { height: 48px; }
+      .score { font-size: clamp(16px, 4.2vw, 22px); }
+      #timer { height: 34px; min-width: 180px; font-size: clamp(16px, 4vw, 22px); }
+      .panel h1 { font-size: 28px; }
+      .panel p { margin: 0 10px 14px; }
+    }
   </style>
 </head>
 <body>
