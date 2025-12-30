@@ -16,8 +16,21 @@
       scoreL: "#6ee7b7",
       scoreR: "#fca5a5",
       barL: "linear-gradient(90deg, #22c55e, #16a34a)",
-      barR: "#7c3aed"
+        barR: "#7c3aed",
+        frame: "rgba(236, 72, 153, 0.35)"
     },
+      view: {
+        // Dynamic padding around the world to keep consistent margins/letterboxing
+        padScaleX: 0.01, // 1% of width
+        padScaleY: 0.01, // 1% of height (below HUD)
+        minPadX: 4,
+        minPadY: 4,
+        maxPadX: 18,
+        maxPadY: 18,
+        frameRadius: 10,
+        frameWidth: 2,
+        showFrame: false
+      },
     effects: {
       playerMissFlash: "rgba(239, 68, 68, 0.55)",
       flashMs: 320
@@ -179,8 +192,15 @@
   class Input {
     constructor(canvas) {
       this.canvas = canvas;
-      this.pointerY = null; // world units
+      this.pointerY = null; // legacy single-pointer (left)
       this.isDown = false;
+      this.twoPlayer = false;
+      // Multi-touch support: independent pointers per side
+      this.pointerYLeft = null;
+      this.pointerYRight = null;
+      this.isDownLeft = false;
+      this.isDownRight = false;
+      this._pointerIdToSide = new Map(); // pointerId -> "left" | "right"
       this.leftUp = false;
       this.leftDown = false;
       this.rightUp = false;
@@ -192,18 +212,51 @@
       };
 
       canvas.addEventListener("pointerdown", (e) => {
-        this.isDown = true;
+        // Determine side by screen-space position; right half goes to Player 2 only when twoPlayer is enabled
+        const rect = canvas.getBoundingClientRect();
+        const xCss = e.clientX - rect.left;
+        const side = (this.twoPlayer && xCss > rect.width / 2) ? "right" : "left";
+        this._pointerIdToSide.set(e.pointerId, side);
         canvas.setPointerCapture?.(e.pointerId);
-        onPointer(e);
+        const p = this._eventToWorld(e);
+        if (side === "right") {
+          this.isDownRight = true;
+          this.pointerYRight = p.y;
+        } else {
+          // left (and legacy single-pointer for compatibility)
+          this.isDownLeft = true;
+          this.pointerYLeft = p.y;
+          this.isDown = true;
+          this.pointerY = p.y;
+        }
         this.onAnyInput?.();
       });
 
       canvas.addEventListener("pointermove", (e) => {
-        if (!this.isDown) return;
-        onPointer(e);
+        const side = this._pointerIdToSide.get(e.pointerId);
+        if (!side) return;
+        const p = this._eventToWorld(e);
+        if (side === "right" && this.isDownRight) {
+          this.pointerYRight = p.y;
+        } else if (side === "left" && this.isDownLeft) {
+          this.pointerYLeft = p.y;
+          this.pointerY = p.y; // legacy
+        }
       });
 
-      const end = () => { this.isDown = false; };
+      const end = (e) => {
+        const side = this._pointerIdToSide.get(e.pointerId);
+        if (side === "right") {
+          this.isDownRight = false;
+          this.pointerYRight = null;
+        } else if (side === "left") {
+          this.isDownLeft = false;
+          this.pointerYLeft = null;
+          this.isDown = false; // legacy
+          this.pointerY = null;
+        }
+        this._pointerIdToSide.delete(e.pointerId);
+      };
       canvas.addEventListener("pointerup", end);
       canvas.addEventListener("pointercancel", end);
 
@@ -223,6 +276,22 @@
         if (e.code === "ArrowUp") this.rightUp = false;
         if (e.code === "ArrowDown") this.rightDown = false;
       });
+    }
+
+    setTwoPlayer(enabled) {
+      const flag = !!enabled;
+      if (this.twoPlayer === flag) return;
+      this.twoPlayer = flag;
+      if (!flag) {
+        // When turning off 2P, clear any right-side touch
+        this.isDownRight = false;
+        this.pointerYRight = null;
+        // Remap active left as legacy if present
+        if (this.isDownLeft) {
+          this.isDown = true;
+          this.pointerY = this.pointerYLeft;
+        }
+      }
     }
 
     setTransform({ scale, offsetX, offsetY }) {
@@ -371,6 +440,7 @@
       this.twoPlayer = false;
       this.chk2p?.addEventListener("change", () => {
         this.twoPlayer = !!this.chk2p.checked;
+        this.input.setTwoPlayer(this.twoPlayer);
       });
 
       this.input = new Input(canvas);
@@ -378,6 +448,7 @@
       this.input.onRestart = () => this.restart();
       this.input.onAnyInput = () => this._armAudio();
        this.input.onPauseToggle = () => this._togglePause();
+      this.input.setTwoPlayer(this.twoPlayer);
 
       this.matchTimeLeft = CONFIG.match.durationSeconds;
       this._updateScoreUI();
@@ -452,7 +523,7 @@
     _fitToScreen() {
       const dpr = window.devicePixelRatio || 1;
       const cssW = window.innerWidth;
-      const cssH = window.innerHeight;
+      const cssH = Math.round(window.visualViewport?.height || window.innerHeight);
       const reservedTop = this._reservedTopCss();
 
       this.canvas.style.width = cssW + "px";
@@ -464,14 +535,36 @@
       this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const availH = Math.max(0, cssH - reservedTop);
-      const scale = Math.min(cssW / CONFIG.world.w, availH / CONFIG.world.h);
+      // compute dynamic padding for consistent margins
+      const isLandscape = cssW >= cssH;
+      const compactLandscape = isLandscape && cssH < 480;
+      const padScaleX = compactLandscape ? 0 : CONFIG.view.padScaleX;
+      const padScaleY = compactLandscape ? 0 : CONFIG.view.padScaleY;
+      const minPadX = compactLandscape ? 0 : CONFIG.view.minPadX;
+      const maxPadX = compactLandscape ? 0 : CONFIG.view.maxPadX;
+      const minPadY = compactLandscape ? 0 : CONFIG.view.minPadY;
+      const maxPadY = compactLandscape ? 0 : CONFIG.view.maxPadY;
+
+      const padX = Math.max(minPadX, Math.min(maxPadX, Math.round(cssW * padScaleX)));
+      const padY = Math.max(minPadY, Math.min(maxPadY, Math.round(availH * padScaleY)));
+
+      const fitW = Math.max(0, cssW - 2 * padX);
+      const fitH = Math.max(0, availH - 2 * padY);
+      const scale = Math.min(fitW / CONFIG.world.w, fitH / CONFIG.world.h);
       const viewW = CONFIG.world.w * scale;
       const viewH = CONFIG.world.h * scale;
-      const offsetX = (cssW - viewW) / 2;
-      const offsetY = reservedTop + (availH - viewH) / 2;
+      const offsetX = padX + (fitW - viewW) / 2;
+      const offsetY = reservedTop + padY + (fitH - viewH) / 2;
 
       this.view = { scale, offsetX, offsetY, cssW, cssH };
       this.input.setTransform({ scale, offsetX, offsetY });
+
+      // Keep HUD narrower than playfield
+      if (this.hudEl) {
+        const hudMax = Math.min(1120, cssW - 28);
+        const hudTarget = Math.max(280, Math.min(hudMax, Math.floor(viewW - 24)));
+        this.hudEl.style.width = hudTarget + "px";
+      }
     }
 
     _startOrRestart() {
@@ -584,9 +677,9 @@
          // still update paddles under input even in serve
        }
 
-      // Player 1 (left) paddle: pointer drag overrides; otherwise W/S keys; else hold position
-      if (this.input.isDown && this.input.pointerY != null) {
-        const target = clamp(this.input.pointerY, CONFIG.paddle.h / 2, CONFIG.world.h - CONFIG.paddle.h / 2);
+      // Player 1 (left) paddle: left pointer drag overrides; otherwise W/S keys; else hold position
+      if (this.input.isDownLeft && this.input.pointerYLeft != null) {
+        const target = clamp(this.input.pointerYLeft, CONFIG.paddle.h / 2, CONFIG.world.h - CONFIG.paddle.h / 2);
         const dy = target - this.left.y;
         const maxStep = CONFIG.paddle.speed * dt;
         this.left.y += clamp(dy, -maxStep, maxStep);
@@ -600,9 +693,17 @@
 
       // Right paddle: either Player 2 (Arrow keys) or AI
       if (this.twoPlayer) {
-        const axisR = this.input.getKeyboardAxisY("right");
-        if (axisR !== 0) this.right.vy = axisR * CONFIG.paddle.speed;
-        else this.right.vy = 0; // hold position when no input
+        if (this.input.isDownRight && this.input.pointerYRight != null) {
+          const targetR = clamp(this.input.pointerYRight, CONFIG.paddle.h / 2, CONFIG.world.h - CONFIG.paddle.h / 2);
+          const dyR = targetR - this.right.y;
+          const maxStepR = CONFIG.paddle.speed * dt;
+          this.right.y += clamp(dyR, -maxStepR, maxStepR);
+          this.right.vy = 0;
+        } else {
+          const axisR = this.input.getKeyboardAxisY("right");
+          if (axisR !== 0) this.right.vy = axisR * CONFIG.paddle.speed;
+          else this.right.vy = 0; // hold position when no input
+        }
         this.right.update(dt);
       } else {
         const dy = this.ball.y - this.right.y;
@@ -751,8 +852,32 @@
       ctx.translate(offsetX, offsetY);
       ctx.scale(scale, scale);
 
+      // playfield background
       ctx.fillStyle = CONFIG.colors.innerBg;
       ctx.fillRect(0, 0, CONFIG.world.w, CONFIG.world.h);
+      // optional frame for desktop; disabled on mobile compact by default
+      if (CONFIG.view.showFrame) {
+        ctx.lineWidth = CONFIG.view.frameWidth;
+        ctx.strokeStyle = CONFIG.colors.frame;
+        const r = CONFIG.view.frameRadius;
+        const w = CONFIG.world.w, h = CONFIG.world.h;
+        if (r > 0) {
+          ctx.beginPath();
+          ctx.moveTo(r, 0);
+          ctx.lineTo(w - r, 0);
+          ctx.quadraticCurveTo(w, 0, w, r);
+          ctx.lineTo(w, h - r);
+          ctx.quadraticCurveTo(w, h, w - r, h);
+          ctx.lineTo(r, h);
+          ctx.quadraticCurveTo(0, h, 0, h - r);
+          ctx.lineTo(0, r);
+          ctx.quadraticCurveTo(0, 0, r, 0);
+          ctx.closePath();
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(0, 0, w, h);
+        }
+      }
 
       // net
       ctx.fillStyle = CONFIG.colors.net;

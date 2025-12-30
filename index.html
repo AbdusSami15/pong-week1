@@ -30,7 +30,7 @@
     /* THEME HUD */
     #hud {
       position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%);
-      width: min(1120px, calc(100vw - 16px));
+      width: min(1120px, calc(100vw - 28px));
       height: 56px;
       border-radius: 18px;
       display: grid;
@@ -151,6 +151,15 @@
       #timer { height: 34px; min-width: 180px; font-size: clamp(16px, 4vw, 22px); }
       .panel h1 { font-size: 28px; }
       .panel p { margin: 0 10px 14px; }
+    }
+
+    /* Landscape small-height optimization (avoid oversized bars off-screen) */
+    @media (max-height: 460px) and (orientation: landscape) {
+      #hud { height: 44px; width: min(1000px, calc(100vw - 36px)); }
+      #hud .bar.left { width: calc(50% - 64px); }
+      #hud .bar.right { width: calc(50% - 64px); }
+      .score { font-size: clamp(14px, 2.6vw, 18px); }
+      #timer { height: 30px; min-width: 160px; font-size: clamp(14px, 2.6vw, 18px); }
     }
   </style>
 </head>
