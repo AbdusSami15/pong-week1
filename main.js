@@ -1,6 +1,6 @@
 (() => {
   const CONFIG = {
-    world: { w: 800, h: 450 },
+    world: { w: 1100, h: 450 },
     paddle: { w: 16, h: 90, speed: 520 },
     ball: { r: 10, speed: 420, maxSpeed: 900, speedUpPerHit: 18 },
     ai: { followSpeed: 420, deadZone: 14 },
@@ -21,30 +21,34 @@
     },
       view: {
         // Dynamic padding around the world to keep consistent margins/letterboxing
-        padScaleX: 0.01, // 1% of width
-        padScaleY: 0.01, // 1% of height (below HUD)
-        minPadX: 4,
-        minPadY: 4,
-        maxPadX: 18,
-        maxPadY: 18,
-        frameRadius: 10,
-        frameWidth: 2,
-        showFrame: false
+        padScaleX: 0.0,
+        padScaleY: 0.0,
+        minPadX: 6,
+        minPadY: 6,
+        maxPadX: 24,
+        maxPadY: 24,
+        frameRadius: 12,
+        frameWidth: 3,
+        showFrame: true,
+        // Fit strategy: "contain" preserves full world with possible side/bottom margins,
+        // "coverWidth" fills screen width (may crop vertically on very wide screens).
+        fitMode: "contain"
       },
     effects: {
       playerMissFlash: "rgba(239, 68, 68, 0.55)",
       flashMs: 320
     },
     trail: {
-      size: 28,            // fixed-length ring buffer entries
-      alphaStart: 0.45,    // leading opacity
-      alphaEnd: 0.0,       // oldest opacity
-      color: "#e9f1ff"     // base color (tinted by alpha)
-      , colorful: true,     // enable rainbow trail when true
-      hueSpeedDegPerSec: 120, // hue rotation speed based on time
-      hueSweepAlongTrail: 320, // hue range from oldest->newest
-      saturationPct: 85,    // HSL saturation for rainbow
-      lightnessPct: 65      // HSL lightness for rainbow
+      size: 24,            // fewer segments for a tighter, smaller trail
+      alphaStart: 0.32,    // opacity at newest (near the ball)
+      alphaEnd: 0.0,       // opacity at oldest (tail end)
+      color: "#a5b4fc",    // fallback color
+      // Professional violet trail like the reference: darkest -> rich violet -> bright violet near ball
+      palette: ["#171327", "#4c1d95", "#7c3aed", "#8b5cf6"],
+      colorful: false,     // disable rainbow; use a single tasteful tint
+      radiusScale: 1,    // trail dot radius relative to ball radius (slightly bigger)
+      radiusTailScale: 0.55, // how small the oldest dot is (relative to radiusScale)
+      minRadius: 2.0       // never draw smaller than this (px, in world units)
     },
     serve: {
       countdownSeconds: 3,
@@ -538,23 +542,29 @@
       // compute dynamic padding for consistent margins
       const isLandscape = cssW >= cssH;
       const compactLandscape = isLandscape && cssH < 480;
-      const padScaleX = compactLandscape ? 0 : CONFIG.view.padScaleX;
-      const padScaleY = compactLandscape ? 0 : CONFIG.view.padScaleY;
-      const minPadX = compactLandscape ? 0 : CONFIG.view.minPadX;
-      const maxPadX = compactLandscape ? 0 : CONFIG.view.maxPadX;
-      const minPadY = compactLandscape ? 0 : CONFIG.view.minPadY;
-      const maxPadY = compactLandscape ? 0 : CONFIG.view.maxPadY;
+      const padScaleX = CONFIG.view.padScaleX;
+      const padScaleY = CONFIG.view.padScaleY;
+      const minPadX = CONFIG.view.minPadX;
+      const maxPadX = CONFIG.view.maxPadX;
+      const minPadY = CONFIG.view.minPadY;
+      const maxPadY = CONFIG.view.maxPadY;
 
       const padX = Math.max(minPadX, Math.min(maxPadX, Math.round(cssW * padScaleX)));
       const padY = Math.max(minPadY, Math.min(maxPadY, Math.round(availH * padScaleY)));
 
       const fitW = Math.max(0, cssW - 2 * padX);
       const fitH = Math.max(0, availH - 2 * padY);
-      const scale = Math.min(fitW / CONFIG.world.w, fitH / CONFIG.world.h);
+      let useCoverWidth = CONFIG.view.fitMode === "coverWidth";
+      const scale = useCoverWidth
+        ? (fitW / CONFIG.world.w)
+        : Math.min(fitW / CONFIG.world.w, fitH / CONFIG.world.h);
       const viewW = CONFIG.world.w * scale;
       const viewH = CONFIG.world.h * scale;
       const offsetX = padX + (fitW - viewW) / 2;
-      const offsetY = reservedTop + padY + (fitH - viewH) / 2;
+      // If using coverWidth the viewH may exceed fitH; top-align to keep world below HUD
+      const centeredY = reservedTop + padY + (fitH - viewH) / 2;
+      const minY = reservedTop + padY;
+      const offsetY = Math.max(minY, centeredY);
 
       this.view = { scale, offsetX, offsetY, cssW, cssH };
       this.input.setTransform({ scale, offsetX, offsetY });
@@ -931,33 +941,61 @@
       const ctx = this.ctx;
       const total = this.trail.count;
       if (total <= 1) return;
-      const a0 = CONFIG.trail.alphaStart;
-      const a1 = CONFIG.trail.alphaEnd;
+      const aNewest = CONFIG.trail.alphaStart; // opacity at newest
+      const aOldest = CONFIG.trail.alphaEnd;   // opacity at oldest
       const base = (this.trail.head - total + this.trail.size) % this.trail.size;
       const colorful = !!CONFIG.trail.colorful;
       const hueSpeed = CONFIG.trail.hueSpeedDegPerSec || 0;
       const hueSweep = CONFIG.trail.hueSweepAlongTrail || 0;
       const sat = CONFIG.trail.saturationPct ?? 85;
       const light = CONFIG.trail.lightnessPct ?? 65;
+      // Optional professional multi-stop palette (start -> end)
+      const pal = Array.isArray(CONFIG.trail.palette) && CONFIG.trail.palette.length >= 2 ? CONFIG.trail.palette : null;
+      const hexToRgb = (hex) => {
+        const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (!m) return [255, 255, 255];
+        return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+      };
+      const rgbToStr = (r, g, b) => `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+      const colorAt = (t) => {
+        if (!pal) return CONFIG.trail.color;
+        const n = pal.length;
+        const pos = Math.min(n - 1, Math.max(0, t * (n - 1)));
+        const i = Math.min(n - 2, Math.floor(pos));
+        const f = pos - i;
+        const a = hexToRgb(pal[i]);
+        const b = hexToRgb(pal[i + 1]);
+        const r = a[0] + (b[0] - a[0]) * f;
+        const g = a[1] + (b[1] - a[1]) * f;
+        const bch = a[2] + (b[2] - a[2]) * f;
+        return rgbToStr(r, g, bch);
+      };
       let lastAlpha = -1;
       for (let k = 0; k < total; k++) {
         const idx = (base + k) % this.trail.size;
         const x = this.trail.x[idx];
         const y = this.trail.y[idx];
-        const t = total <= 1 ? 1 : k / (total - 1);
-        const alpha = a0 + (a1 - a0) * t;
+        const t = total <= 1 ? 1 : k / (total - 1); // 0=oldest, 1=newest
+        // Fade oldest -> newest (newest strongest)
+        const alpha = aOldest + (aNewest - aOldest) * t;
         if (alpha !== lastAlpha) {
           ctx.globalAlpha = alpha;
           lastAlpha = alpha;
         }
-        if (colorful) {
+        if (pal) {
+          ctx.fillStyle = colorAt(t);
+        } else if (colorful) {
           const hue = ((this.time * hueSpeed) + (t * hueSweep)) % 360;
           ctx.fillStyle = `hsl(${hue}deg, ${sat}%, ${light}%)`;
         } else {
           ctx.fillStyle = CONFIG.trail.color;
         }
+        const baseR = CONFIG.ball.r * (CONFIG.trail.radiusScale ?? 1);
+        const tailScale = CONFIG.trail.radiusTailScale ?? 0.5;
+        const dynamicR = baseR * (tailScale + (1 - tailScale) * t);
+        const drawR = Math.max(CONFIG.trail.minRadius ?? 1, dynamicR);
         ctx.beginPath();
-        ctx.arc(x, y, CONFIG.ball.r, 0, TAU);
+        ctx.arc(x, y, drawR, 0, TAU);
         ctx.fill();
       }
       if (lastAlpha !== -1) ctx.globalAlpha = 1;

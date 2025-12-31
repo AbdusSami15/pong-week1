@@ -19,13 +19,14 @@
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
     }
-    canvas { display: block; width: 100vw; height: 100vh; }
+    canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; z-index: 0; }
     @supports (height: 100dvh) {
       canvas { height: 100dvh; }
     }
     #ui {
       position: fixed; inset: 0;
       pointer-events: none;
+      z-index: 1;
     }
     /* THEME HUD */
     #hud {
