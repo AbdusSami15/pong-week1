@@ -110,6 +110,17 @@
     }
     #toggle2p input:checked + label .knob { background: #22c55e; }
     #toggle2p input:checked + label .knob::after { transform: translateX(18px); background: #ecfdf5; }
+    /* Pause button */
+    #btnPause {
+      position: absolute; right: calc(env(safe-area-inset-right, 0px) + 18px); top: calc(env(safe-area-inset-top, 0px) + 112px);
+      pointer-events: auto;
+      background: rgba(0,0,0,0.35); color: #f3f7ff;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 800;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      cursor: pointer;
+    }
+    #btnPause:hover { filter: brightness(1.05); }
     #overlay {
       position: absolute; inset: 0;
       display: grid; place-items: center;
@@ -188,6 +199,7 @@
       <input type="checkbox" id="chk2p" />
       <label for="chk2p"><div class="knob"></div><span>2P</span></label>
     </div>
+    <button id="btnPause" type="button">Pause</button>
     <div id="fxFlash"></div>
 
     <div id="overlay">

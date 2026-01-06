@@ -5,7 +5,7 @@
     ball: { r: 10, speed: 420, maxSpeed: 900, speedUpPerHit: 18 },
     ai: { followSpeed: 420, deadZone: 14 },
     net: { dash: 14, gap: 10, w: 4 },
-    scoreToWin: 7,
+    scoreToWin: 10,
     bounce: { maxAngleDeg: 55, spinFactor: 0.18 },
     match: { durationSeconds: 9 * 60 },
     colors: {
@@ -434,6 +434,7 @@
       this.subtitle = document.getElementById("subtitle");
       this.btnStart = document.getElementById("btnStart");
       this.btnQuit = document.getElementById("btnQuit");
+      this.btnPause = document.getElementById("btnPause");
 
       this.btnStart.addEventListener("click", async () => {
         this._armAudio();
@@ -441,6 +442,7 @@
         this._startOrRestart();
       });
       this.btnQuit?.addEventListener("click", () => this._quitToMenu());
+      this.btnPause?.addEventListener("click", () => this._togglePause());
       this.twoPlayer = false;
       this.chk2p?.addEventListener("change", () => {
         this.twoPlayer = !!this.chk2p.checked;
@@ -454,7 +456,7 @@
        this.input.onPauseToggle = () => this._togglePause();
       this.input.setTwoPlayer(this.twoPlayer);
 
-      this.matchTimeLeft = CONFIG.match.durationSeconds;
+      this.elapsedTime = 0;
       this._updateScoreUI();
       this._updateTimeUI();
       this.showMenu();
@@ -464,6 +466,22 @@
       window.addEventListener("orientationchange", () => this._fitToScreen());
       document.addEventListener("fullscreenchange", () => this._fitToScreen());
       window.visualViewport?.addEventListener("resize", () => this._fitToScreen());
+    }
+
+    _isTouch() {
+      try {
+        return (("ontouchstart" in window) || (navigator.maxTouchPoints || 0) > 0 || window.matchMedia?.("(pointer:coarse)")?.matches);
+      } catch {
+        return false;
+      }
+    }
+
+    _menuHintText() {
+      const isTouch = this._isTouch();
+      if (isTouch) {
+        return "Drag left: P1. Drag right: P2 when 2P ON. Tap Start. Tap Pause to pause.";
+      }
+      return "Mouse/Drag: P1. W/S: P1, ↑/↓: P2 when 2P ON. Space: Start, P/Esc: Pause, R: Restart.";
     }
 
     async _enterFullscreenLandscape() {
@@ -491,8 +509,8 @@
          this.prevState = this.state;
          this.state = "pause";
          this.overlay.classList.remove("hidden");
-         this.title.textContent = "Paused";
-         this.subtitle.textContent = "Press P/Escape to resume.";
+      this.title.textContent = "Paused";
+          this.subtitle.textContent = this._isTouch() ? "Tap Resume or Pause to continue." : "Press P/Escape to resume.";
          this.btnStart.textContent = "Resume";
          this.btnQuit?.classList.add("hidden");
        } else if (this.state === "pause") {
@@ -590,20 +608,20 @@
       this.title.textContent = "Pong";
       this.title.style.color = "#e8eefc";
       this.title.style.textShadow = "0 2px 12px rgba(0,0,0,0.6)";
-       this.subtitle.textContent = "Tap/Drag (P1). W/S: P1, ↑/↓: P2 when 2P ON. Space: Start, P/Esc: Pause, R: Restart.";
+       this.subtitle.textContent = this._menuHintText();
       this.btnStart.textContent = "Start";
       this.btnQuit?.classList.add("hidden");
       if (this.chk2p) this.chk2p.checked = false;
       this.twoPlayer = false;
       this.ball.reset(sign(Math.random() - 0.5));
       this.trail.clear();
-      this.matchTimeLeft = CONFIG.match.durationSeconds;
+      this.elapsedTime = 0;
       this._updateTimeUI();
     }
 
     start() {
        this.overlay.classList.add("hidden");
-       this.matchTimeLeft = CONFIG.match.durationSeconds;
+       this.elapsedTime = 0;
        this._updateTimeUI();
        this._beginServe(sign(Math.random() - 0.5));
     }
@@ -631,7 +649,7 @@
     }
  
     _updateTimeUI() {
-      const t = Math.max(0, Math.ceil(this.matchTimeLeft));
+      const t = Math.max(0, Math.floor(this.elapsedTime));
       const m = Math.floor(t / 60);
       const s = t % 60;
       const text = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
@@ -656,17 +674,11 @@
        if (this.state === "pause" || this.state === "menu" || this.state === "over") return;
        this.time += dt;
 
-       // countdown timer during serve and play
-       if (this.state === "serve" || this.state === "play") {
-         this.matchTimeLeft = Math.max(0, this.matchTimeLeft - dt);
-         this._updateTimeUI();
-         if (this.matchTimeLeft <= 0) {
-           const outcome = this.leftScore === this.rightScore
-             ? "Draw!"
-             : (this.leftScore > this.rightScore ? "You Win!" : "AI Wins!");
-           return this._gameOver(outcome);
-         }
-       }
+       // elapsed timer during serve and play (count up)
+        if (this.state === "serve" || this.state === "play") {
+          this.elapsedTime += dt;
+          this._updateTimeUI();
+        }
       // decay flash timer
       if (this._flashTime > 0) this._flashTime = Math.max(0, this._flashTime - dt);
 
@@ -735,8 +747,8 @@
       this._handlePaddleHit(this.left, +1);
       this._handlePaddleHit(this.right, -1);
 
-      // Score out of bounds
-      if (this.ball.x < -40) {
+      // Score when ball hits the vertical frame (left/right borders)
+      if (this.ball.x - CONFIG.ball.r <= 0) {
         this.rightScore++;
         this._updateScoreUI();
         const win = this._checkWin();
@@ -745,7 +757,7 @@
          this.sound.miss();
          this._flash();
          this._beginServe(+1); // serve toward scorer's opponent (left was scored on)
-      } else if (this.ball.x > CONFIG.world.w + 40) {
+      } else if (this.ball.x + CONFIG.ball.r >= CONFIG.world.w) {
         this.leftScore++;
         this._updateScoreUI();
         const win = this._checkWin();
